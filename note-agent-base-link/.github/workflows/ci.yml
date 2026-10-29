@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # 只装测试必需的轻量依赖；faster-whisper/av/gmssl 均为运行时惰性依赖，
+      # tests/ 已打桩（tests/conftest.py），离线可跑、不联网。
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pillow pytest
+
+      # Windows shell 不展开通配符，用 compileall 递归编译（等价于 py_compile scripts/*.py）
+      - name: Syntax check all scripts
+        run: python -m compileall -q scripts
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      # M5 回归防线：-X utf8 下父进程强制 UTF-8，若子进程测试漏指定
+      # encoding，在 cp936 的 windows runner 上会立刻暴露
+      - name: Run tests under -X utf8
+        run: python -X utf8 -m pytest tests/ -q
